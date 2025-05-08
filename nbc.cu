@@ -35,7 +35,6 @@ struct simulation {
   {}
 };
 
-// CUDA kernel to reset forces
 __global__ void reset_forces_kernel(double* fx, double* fy, double* fz, size_t nbpart) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < nbpart) {
@@ -45,7 +44,6 @@ __global__ void reset_forces_kernel(double* fx, double* fy, double* fz, size_t n
     }
 }
 
-// CUDA kernel to compute forces
 __global__ void compute_forces_kernel(double* mass, double* x, double* y, double* z,
                                      double* fx, double* fy, double* fz,
                                      size_t nbpart, double G) {
@@ -83,7 +81,6 @@ __global__ void compute_forces_kernel(double* mass, double* x, double* y, double
     fz[i] = my_fz;
 }
 
-// CUDA kernel to update velocities and positions
 __global__ void update_particles_kernel(double* x, double* y, double* z,
                                        double* vx, double* vy, double* vz,
                                        double* fx, double* fy, double* fz,
@@ -148,7 +145,6 @@ void init_solar(simulation& s) {
   enum Planets {SUN, MERCURY, VENUS, EARTH, MARS, JUPITER, SATURN, URANUS, NEPTUNE, MOON};
   s = simulation(10);
 
-  // Masses in kg
   s.mass[SUN] = 1.9891e30;
   s.mass[MERCURY] = 3.285e23;
   s.mass[VENUS] = 4.867e24;
@@ -160,8 +156,7 @@ void init_solar(simulation& s) {
   s.mass[NEPTUNE] = 1.024e26;
   s.mass[MOON] = 7.342e22;
 
-  // Positions (in meters) and velocities (in m/s)
-  double AU = 1.496e11; // Astronomical Unit
+  double AU = 1.496e11;
 
   s.x = {0, 0.39*AU, 0.72*AU, 1.0*AU, 1.52*AU, 5.20*AU, 9.58*AU, 19.22*AU, 30.05*AU, 1.0*AU + 3.844e8};
   s.y = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -216,7 +211,6 @@ int main(int argc, char* argv[]) {
   
   simulation s(1);
 
-  // Parse command line
   {
     size_t nbpart = std::atol(argv[1]);
     if (nbpart > 0) {
@@ -232,10 +226,8 @@ int main(int argc, char* argv[]) {
     }    
   }
 
-  // Start timing
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  // Allocate device memory
   double *d_mass, *d_x, *d_y, *d_z, *d_vx, *d_vy, *d_vz, *d_fx, *d_fy, *d_fz;
   
   cudaMalloc(&d_mass, s.nbpart * sizeof(double));
@@ -249,7 +241,6 @@ int main(int argc, char* argv[]) {
   cudaMalloc(&d_fy, s.nbpart * sizeof(double));
   cudaMalloc(&d_fz, s.nbpart * sizeof(double));
 
-  // Copy initial data to device
   cudaMemcpy(d_mass, s.mass.data(), s.nbpart * sizeof(double), cudaMemcpyHostToDevice);
   cudaMemcpy(d_x, s.x.data(), s.nbpart * sizeof(double), cudaMemcpyHostToDevice);
   cudaMemcpy(d_y, s.y.data(), s.nbpart * sizeof(double), cudaMemcpyHostToDevice);
@@ -261,12 +252,11 @@ int main(int argc, char* argv[]) {
   cudaMemcpy(d_fy, s.fy.data(), s.nbpart * sizeof(double), cudaMemcpyHostToDevice);
   cudaMemcpy(d_fz, s.fz.data(), s.nbpart * sizeof(double), cudaMemcpyHostToDevice);
 
-  // Calculate grid size
   size_t gridSize = (s.nbpart + blockSize - 1) / blockSize;
 
   for (size_t step = 0; step < nbstep; step++) {
     if (step % printevery == 0) {
-      // Copy data back to host for output
+
       cudaMemcpy(s.fx.data(), d_fx, s.nbpart * sizeof(double), cudaMemcpyDeviceToHost);
       cudaMemcpy(s.fy.data(), d_fy, s.nbpart * sizeof(double), cudaMemcpyDeviceToHost);
       cudaMemcpy(s.fz.data(), d_fz, s.nbpart * sizeof(double), cudaMemcpyDeviceToHost);
@@ -278,16 +268,13 @@ int main(int argc, char* argv[]) {
       cudaMemcpy(s.vz.data(), d_vz, s.nbpart * sizeof(double), cudaMemcpyDeviceToHost);
       dump_state(s);
     }
-  
-    // Reset forces
+
     reset_forces_kernel<<<gridSize, blockSize>>>(d_fx, d_fy, d_fz, s.nbpart);
-    
-    // Compute forces
+
     compute_forces_kernel<<<gridSize, blockSize>>>(d_mass, d_x, d_y, d_z, 
                                                  d_fx, d_fy, d_fz, 
                                                  s.nbpart, G);
-    
-    // Update particles
+
     update_particles_kernel<<<gridSize, blockSize>>>(d_x, d_y, d_z,
                                                    d_vx, d_vy, d_vz,
                                                    d_fx, d_fy, d_fz,
@@ -296,7 +283,6 @@ int main(int argc, char* argv[]) {
     cudaDeviceSynchronize();
   }
 
-  // Free device memory
   cudaFree(d_mass);
   cudaFree(d_x);
   cudaFree(d_y);
@@ -308,10 +294,11 @@ int main(int argc, char* argv[]) {
   cudaFree(d_fy);
   cudaFree(d_fz);
 
-  // End timing and print execution time
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+  std::cout << "\n\n------------------------------------------------------\n";
   std::cerr << "Execution time: " << duration.count() << " ms\n";
+  std::cout << "------------------------------------------------------\n";
 
   return 0;
 }
